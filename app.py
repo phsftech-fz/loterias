@@ -1121,12 +1121,30 @@ def parsear_arquivo_txt_lotomania(conteudo: str) -> list:
         
         match = re.search(r'Jogo\s+\d+(?:\s*\([^)]+\))?:\s*(.+)', linha, re.IGNORECASE)
         if match:
-            numeros_str = match.group(1)
+            numeros_str = match.group(1).strip()
             # Lotomania: números de 00 a 99
-            numeros = re.findall(r'\b([0-9]|[1-9][0-9])\b', numeros_str)
+            # Formato no arquivo: "00 - 03 - 04 - 05..." separados por " - "
+            # Divide por " - " e extrai os números
+            partes = re.split(r'\s*-\s*', numeros_str)
+            numeros = []
+            for parte in partes:
+                parte = parte.strip()
+                if parte:
+                    # Extrai número (1 ou 2 dígitos, incluindo 00, 01, etc)
+                    num_match = re.search(r'(\d{1,2})', parte)
+                    if num_match:
+                        num_str = num_match.group(1)
+                        try:
+                            num = int(num_str)
+                            if 0 <= num <= 99:
+                                numeros.append(num_str)
+                        except ValueError:
+                            continue
+            
             if numeros:
                 try:
                     jogo = [int(n) for n in numeros if 0 <= int(n) <= 99]
+                    # Remove duplicatas mantendo ordem
                     jogo = list(dict.fromkeys(jogo))
                     if len(jogo) == 50:  # Lotomania: 50 números por jogo
                         jogos.append(sorted(jogo))
