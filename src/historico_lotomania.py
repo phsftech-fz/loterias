@@ -283,18 +283,19 @@ class HistoricoLotomania:
     def obter_historico_api(self) -> List[Dict]:
         """
         Obtém histórico de múltiplas fontes
-        Busca últimos 500 concursos usando várias APIs
+        Busca últimos 1000 concursos usando várias APIs
         Retorna lista de concursos com números sorteados
         """
         concursos = []
+        LIMITE_CONCURSOS = 1000
         
-        print("Buscando historico Lotomania de multiplas fontes (ultimos 500 concursos)...")
+        print(f"Buscando historico Lotomania de multiplas fontes (ultimos {LIMITE_CONCURSOS} concursos)...")
         
         # Método 1: Tenta carregar arquivo local primeiro
         print("  [1/3] Verificando arquivo local...")
         concursos_local = self._buscar_arquivo_local()
         if concursos_local and len(concursos_local) >= 50:
-            concursos_local = concursos_local[-500:] if len(concursos_local) > 500 else concursos_local
+            concursos_local = concursos_local[-LIMITE_CONCURSOS:] if len(concursos_local) > LIMITE_CONCURSOS else concursos_local
             concursos.extend(concursos_local)
             print(f"  OK - Arquivo local: {len(concursos_local)} concursos encontrados")
         
@@ -305,20 +306,20 @@ class HistoricoLotomania:
             concursos.extend(concursos_caixa)
             print(f"  OK - API Caixa: {len(concursos_caixa)} concursos encontrados")
         
-        # Método 3: Busca complementar se ainda não tiver 500
-        if len(concursos) < 500:
-            print(f"  [3/3] Busca complementar para atingir 500 (atual: {len(concursos)})...")
-            limite_restante = 500 - len(concursos)
+        # Método 3: Busca complementar se ainda não tiver 1000
+        if len(concursos) < LIMITE_CONCURSOS:
+            print(f"  [3/3] Busca complementar para atingir {LIMITE_CONCURSOS} (atual: {len(concursos)})...")
+            limite_restante = LIMITE_CONCURSOS - len(concursos)
             if limite_restante > 0:
                 concursos_complementar = self._buscar_concursos_limitado(limite_restante)
                 if concursos_complementar:
                     concursos.extend(concursos_complementar)
                     print(f"  OK - Busca complementar: {len(concursos_complementar)} concursos encontrados")
                 
-                if len(concursos) < 500:
-                    print(f"  Continuando busca para atingir 500 (atual: {len(concursos)})...")
+                if len(concursos) < LIMITE_CONCURSOS:
+                    print(f"  Continuando busca para atingir {LIMITE_CONCURSOS} (atual: {len(concursos)})...")
                     ultimo = self._obter_ultimo_concurso() or 2867
-                    limite_adicional = 500 - len(concursos)
+                    limite_adicional = LIMITE_CONCURSOS - len(concursos)
                     print(f"    Buscando mais {limite_adicional} concursos a partir do {ultimo}...")
                     
                     contador_complementar = 0
@@ -328,18 +329,18 @@ class HistoricoLotomania:
                             if c:
                                 concursos.append(c)
                                 contador_complementar += 1
-                            if len(concursos) >= 500:
+                            if len(concursos) >= LIMITE_CONCURSOS:
                                 break
                             if contador_complementar % 10 == 0:
-                                print(f"      Progresso: {len(concursos)}/500 concursos...")
+                                print(f"      Progresso: {len(concursos)}/{LIMITE_CONCURSOS} concursos...")
                             time.sleep(0.1)
                         except:
                             continue
                     
-                    if len(concursos) >= 500:
-                        print(f"  OK - Limite de 500 concursos atingido!")
+                    if len(concursos) >= LIMITE_CONCURSOS:
+                        print(f"  OK - Limite de {LIMITE_CONCURSOS} concursos atingido!")
                     else:
-                        print(f"  AVISO - Encontrados {len(concursos)} concursos (objetivo: 500)")
+                        print(f"  AVISO - Encontrados {len(concursos)} concursos (objetivo: {LIMITE_CONCURSOS})")
         
         # Remove duplicatas e ordena
         concursos_unicos = {}
@@ -352,19 +353,19 @@ class HistoricoLotomania:
         
         resultado = sorted(concursos_unicos.values(), key=lambda x: x.get('concurso', 0))
         
-        # Limita a 500 concursos máximo
-        if len(resultado) > 500:
-            resultado = resultado[-500:]
+        # Limita a 1000 concursos máximo
+        if len(resultado) > LIMITE_CONCURSOS:
+            resultado = resultado[-LIMITE_CONCURSOS:]
         
         if resultado:
-            print(f"OK - Total: {len(resultado)} concursos carregados (ultimos 500)")
+            print(f"OK - Total: {len(resultado)} concursos carregados (ultimos {LIMITE_CONCURSOS})")
             return resultado
         else:
             print("AVISO - Nenhum concurso encontrado, usando cache...")
             cache = self._carregar_cache()
             if cache:
-                if len(cache) > 500:
-                    cache = cache[-500:]
+                if len(cache) > LIMITE_CONCURSOS:
+                    cache = cache[-LIMITE_CONCURSOS:]
                 return cache
             return []
     
@@ -458,10 +459,11 @@ class HistoricoLotomania:
                 
                 historico_completo = sorted(historico_existente.values(), key=lambda x: x.get('concurso', 0))
                 
-                # Limita a 500 concursos máximo
-                if len(historico_completo) > 500:
-                    historico_completo = historico_completo[-500:]
-                    print(f"Limitado aos ultimos 500 concursos")
+                # Limita a 1000 concursos máximo
+                LIMITE_CONCURSOS = 1000
+                if len(historico_completo) > LIMITE_CONCURSOS:
+                    historico_completo = historico_completo[-LIMITE_CONCURSOS:]
+                    print(f"Limitado aos ultimos {LIMITE_CONCURSOS} concursos")
                 
                 if concursos_novos:
                     print(f"Encontrados {len(concursos_novos)} concursos novos (sem duplicatas)")

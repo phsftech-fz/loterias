@@ -147,42 +147,27 @@ function exibirJogos(jogos, timeSugerido = {}) {
     // Adiciona card de sugestão de time do coração
     if (timeSugerido && timeSugerido.time_sugerido) {
         const timeCard = document.createElement('div');
-        timeCard.className = 'jogo-card';
-        timeCard.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
-        timeCard.style.color = 'white';
-        timeCard.style.border = 'none';
+        timeCard.className = 'jogo-card time-suggestion-card';
         
         const timeTitulo = document.createElement('h4');
         timeTitulo.innerHTML = '<i class="fas fa-futbol"></i> Sugestão de Time do Coração';
-        timeTitulo.style.marginBottom = '10px';
-        timeTitulo.style.color = 'white';
         
         const timeNome = document.createElement('div');
-        timeNome.style.fontSize = '1.3em';
-        timeNome.style.fontWeight = 'bold';
-        timeNome.style.marginBottom = '10px';
-        timeNome.style.color = '#ffd700';
+        timeNome.className = 'time-name';
         timeNome.textContent = timeSugerido.time_sugerido;
         
         const timeRazao = document.createElement('div');
-        timeRazao.style.fontSize = '0.95em';
-        timeRazao.style.marginBottom = '8px';
-        timeRazao.style.opacity = '0.95';
+        timeRazao.className = 'time-reason';
         timeRazao.textContent = timeSugerido.razao || '';
         
         if (timeSugerido.confianca !== undefined) {
             const timeConfianca = document.createElement('div');
-            timeConfianca.style.fontSize = '0.9em';
-            timeConfianca.style.marginTop = '10px';
-            timeConfianca.style.padding = '8px';
-            timeConfianca.style.background = 'rgba(255, 255, 255, 0.2)';
-            timeConfianca.style.borderRadius = '5px';
+            timeConfianca.className = 'time-confidence';
             timeConfianca.innerHTML = `<strong>Confiança:</strong> ${timeSugerido.confianca}%`;
             
             if (timeSugerido.frequencia_historico !== undefined) {
                 const freqInfo = document.createElement('div');
-                freqInfo.style.fontSize = '0.85em';
-                freqInfo.style.marginTop = '5px';
+                freqInfo.className = 'time-frequency';
                 freqInfo.innerHTML = `<i class="fas fa-chart-line"></i> Apareceu ${timeSugerido.frequencia_historico} vez${timeSugerido.frequencia_historico !== 1 ? 'es' : ''} no histórico`;
                 timeConfianca.appendChild(freqInfo);
             }

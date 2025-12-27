@@ -719,7 +719,7 @@ def get_historico_timemania():
     """Retorna histórico de concursos da Timemania com times sorteados"""
     try:
         limite = int(request.args.get('limite', 50))
-        limite = min(limite, 500)  # Limite máximo de segurança
+        limite = min(limite, 450)  # Limite máximo de segurança
         
         ultimos = historico_timemania[-limite:] if len(historico_timemania) > limite else historico_timemania
         
