@@ -446,3 +446,54 @@ section h2 {
     font-style: italic;
 }
 
+/* Menu de Navegação */
+.nav-menu {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 20px;
+    flex-wrap: wrap;
+}
+
+.nav-item {
+    padding: 12px 24px;
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    text-decoration: none;
+    border-radius: 8px;
+    font-weight: 500;
+    transition: all 0.3s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border: 2px solid transparent;
+}
+
+.nav-item:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.nav-item.active {
+    background: rgba(255, 255, 255, 0.9);
+    color: #667eea;
+    border-color: rgba(255, 255, 255, 0.5);
+    font-weight: bold;
+}
+
+.nav-item i {
+    font-size: 1.1em;
+}
+
+@media (max-width: 768px) {
+    .nav-menu {
+        gap: 8px;
+    }
+    
+    .nav-item {
+        padding: 10px 16px;
+        font-size: 0.9em;
+    }
+}
+
