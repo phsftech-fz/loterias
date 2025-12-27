@@ -136,39 +136,94 @@ class GeradorFechamentoTimemania:
         return jogos
     
     def fechamento_misto(self, quantidade_jogos: int = 10) -> List[List[int]]:
-        """Combina múltiplas estratégias"""
+        """
+        ESTRATÉGIA OTIMIZADA PARA TIMEMANIA:
+        - 35% números quentes (3-4 números - tendência recente)
+        - 30% números atrasados (3 números - lei dos grandes números)
+        - 20% números de alta frequência histórica (2 números)
+        - 10% distribuição por oitavas (1 número de diferentes faixas)
+        - 5% números aleatórios (diversificação final)
+        
+        Garante boa cobertura das 8 oitavas para maximizar chances.
+        """
         stats = self.analisador.get_estatisticas_completas()
-        quentes = stats['numeros_quentes']
-        atrasados = stats['numeros_atrasados']
-        mais_sorteados = [num for num, _ in self.analisador.numeros_mais_sorteados(20)]
+        quentes = stats.get('numeros_quentes', [])
+        atrasados = stats.get('numeros_atrasados', [])
+        mais_sorteados = [num for num, _ in self.analisador.numeros_mais_sorteados(30)]
+        media_dezenas = stats.get('media_dezenas', {})
+        
+        # Define oitavas (1-10, 11-20, 21-30, etc)
+        oitavas = {
+            'O1': list(range(1, 11)),
+            'O2': list(range(11, 21)),
+            'O3': list(range(21, 31)),
+            'O4': list(range(31, 41)),
+            'O5': list(range(41, 51)),
+            'O6': list(range(51, 61)),
+            'O7': list(range(61, 71)),
+            'O8': list(range(71, 81))
+        }
         
         jogos = []
         
         for _ in range(quantidade_jogos):
             jogo = []
+            numeros_usados = set()
             
-            # 40% números quentes
+            # 35% números quentes (3-4 números)
             if quentes:
-                jogo.extend(random.sample(quentes, min(4, len(quentes))))
+                quentes_disponiveis = [n for n in quentes if n not in numeros_usados]
+                if quentes_disponiveis:
+                    selecionados = random.sample(quentes_disponiveis, min(4, len(quentes_disponiveis)))
+                    jogo.extend(selecionados)
+                    numeros_usados.update(selecionados)
             
-            # 30% números atrasados
+            # 30% números atrasados (3 números)
             if atrasados:
-                jogo.extend(random.sample(atrasados, min(3, len(atrasados))))
+                atrasados_disponiveis = [n for n in atrasados if n not in numeros_usados]
+                if atrasados_disponiveis:
+                    selecionados = random.sample(atrasados_disponiveis, min(3, len(atrasados_disponiveis)))
+                    jogo.extend(selecionados)
+                    numeros_usados.update(selecionados)
             
-            # 20% números de alta frequência
-            disponiveis = [n for n in mais_sorteados if n not in jogo]
-            if disponiveis:
-                jogo.extend(random.sample(disponiveis, min(2, len(disponiveis))))
+            # 20% números de alta frequência (2 números)
+            frequencia_disponiveis = [n for n in mais_sorteados if n not in numeros_usados]
+            if frequencia_disponiveis:
+                selecionados = random.sample(frequencia_disponiveis, min(2, len(frequencia_disponiveis)))
+                jogo.extend(selecionados)
+                numeros_usados.update(selecionados)
             
-            # 10% números aleatórios para completar
-            todos_disponiveis = [n for n in self.numeros_range if n not in jogo]
-            if todos_disponiveis:
-                faltam = 10 - len(jogo)
-                if faltam > 0:
-                    jogo.extend(random.sample(todos_disponiveis, min(faltam, len(todos_disponiveis))))
+            # 10% distribuição por oitavas (1 número de diferentes faixas)
+            # Seleciona aleatoriamente algumas oitavas para garantir distribuição
+            oitavas_keys = list(oitavas.keys())
+            random.shuffle(oitavas_keys)
+            for o_key in oitavas_keys[:2]:  # Seleciona de 2 oitavas diferentes
+                if len(jogo) >= 10:
+                    break
+                oitava_disponiveis = [n for n in oitavas[o_key] if n not in numeros_usados]
+                if oitava_disponiveis:
+                    selecionado = random.choice(oitava_disponiveis)
+                    jogo.append(selecionado)
+                    numeros_usados.add(selecionado)
             
-            jogo = sorted(jogo[:10])
-            if jogo not in jogos:
+            # 5% números aleatórios para completar (1 número)
+            todos_disponiveis = [n for n in self.numeros_range if n not in numeros_usados]
+            faltam = 10 - len(jogo)
+            if faltam > 0 and todos_disponiveis:
+                selecionados = random.sample(todos_disponiveis, min(faltam, len(todos_disponiveis)))
+                jogo.extend(selecionados)
+            
+            # Garante exatamente 10 números
+            jogo = sorted(list(set(jogo))[:10])
+            while len(jogo) < 10:
+                disponiveis = [n for n in self.numeros_range if n not in jogo]
+                if disponiveis:
+                    jogo.append(random.choice(disponiveis))
+                    jogo = sorted(jogo)
+                else:
+                    break
+            
+            if len(jogo) == 10 and jogo not in jogos:
                 jogos.append(jogo)
         
         return jogos
@@ -217,7 +272,15 @@ class GeradorFechamentoTimemania:
         }
         
         estrategia_func = estrategias.get(estrategia, self.fechamento_misto)
-        return estrategia_func(quantidade_jogos)
+        jogos = estrategia_func(quantidade_jogos)
+        
+        # Garante que não há jogos duplicados
+        jogos_unicos = []
+        for jogo in jogos:
+            if jogo not in jogos_unicos:
+                jogos_unicos.append(jogo)
+        
+        return jogos_unicos
     
     def validar_jogo(self, jogo: List[int]) -> bool:
         """Valida se um jogo está correto (10 números entre 1 e 80)"""

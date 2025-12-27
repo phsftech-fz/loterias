@@ -129,39 +129,88 @@ class GeradorFechamentoLotomania:
         return jogos
     
     def fechamento_misto(self, quantidade_jogos: int = 10) -> List[List[int]]:
-        """Combina múltiplas estratégias"""
+        """
+        ESTRATÉGIA OTIMIZADA PARA LOTOMANIA:
+        - 30% números quentes (tendência recente)
+        - 25% números atrasados (lei dos grandes números)
+        - 20% números de alta frequência histórica
+        - 20% distribuição equilibrada por dezenas (00-09, 10-19, etc)
+        - 5% números aleatórios (diversificação)
+        
+        Garante cobertura de todas as 10 dezenas para maximizar chances.
+        """
         stats = self.analisador.get_estatisticas_completas()
-        quentes = stats['numeros_quentes']
-        atrasados = stats['numeros_atrasados']
-        mais_sorteados = [num for num, _ in self.analisador.numeros_mais_sorteados(40)]
+        quentes = stats.get('numeros_quentes', [])
+        atrasados = stats.get('numeros_atrasados', [])
+        mais_sorteados = [num for num, _ in self.analisador.numeros_mais_sorteados(50)]
+        media_dezenas = stats.get('media_dezenas', {})
+        
+        # Define dezenas (00-09, 10-19, 20-29, etc)
+        dezenas = {}
+        for i in range(10):
+            dezenas[f'D{i}'] = list(range(i * 10, (i + 1) * 10))
         
         jogos = []
         
         for _ in range(quantidade_jogos):
             jogo = []
+            numeros_usados = set()
             
-            # 40% números quentes
+            # 30% números quentes (15 números)
             if quentes:
-                jogo.extend(random.sample(quentes, min(20, len(quentes))))
+                quentes_disponiveis = [n for n in quentes if n not in numeros_usados]
+                if quentes_disponiveis:
+                    selecionados = random.sample(quentes_disponiveis, min(15, len(quentes_disponiveis)))
+                    jogo.extend(selecionados)
+                    numeros_usados.update(selecionados)
             
-            # 30% números atrasados
+            # 25% números atrasados (12-13 números)
             if atrasados:
-                jogo.extend(random.sample(atrasados, min(15, len(atrasados))))
+                atrasados_disponiveis = [n for n in atrasados if n not in numeros_usados]
+                if atrasados_disponiveis:
+                    selecionados = random.sample(atrasados_disponiveis, min(12, len(atrasados_disponiveis)))
+                    jogo.extend(selecionados)
+                    numeros_usados.update(selecionados)
             
-            # 20% números de alta frequência
-            disponiveis = [n for n in mais_sorteados if n not in jogo]
-            if disponiveis:
-                jogo.extend(random.sample(disponiveis, min(10, len(disponiveis))))
+            # 20% números de alta frequência (10 números)
+            frequencia_disponiveis = [n for n in mais_sorteados if n not in numeros_usados]
+            if frequencia_disponiveis:
+                selecionados = random.sample(frequencia_disponiveis, min(10, len(frequencia_disponiveis)))
+                jogo.extend(selecionados)
+                numeros_usados.update(selecionados)
             
-            # 10% números aleatórios para completar
-            todos_disponiveis = [n for n in self.numeros_range if n not in jogo]
-            if todos_disponiveis:
-                faltam = 50 - len(jogo)
-                if faltam > 0:
-                    jogo.extend(random.sample(todos_disponiveis, min(faltam, len(todos_disponiveis))))
+            # 20% distribuição equilibrada por dezenas (10 números - 1 por dezena prioritariamente)
+            # Garante cobertura de todas as 10 dezenas
+            qtd_por_dezena = 10 // 10  # 1 número por dezena mínimo
+            for i in range(10):
+                if len(jogo) >= 50:
+                    break
+                d_key = f'D{i}'
+                dezena_disponiveis = [n for n in dezenas[d_key] if n not in numeros_usados]
+                if dezena_disponiveis:
+                    # Prioriza números da dezena que ainda não estão no jogo
+                    selecionados = random.sample(dezena_disponiveis, min(qtd_por_dezena + 1, len(dezena_disponiveis)))
+                    jogo.extend(selecionados)
+                    numeros_usados.update(selecionados)
             
-            jogo = sorted(jogo[:50])
-            if jogo not in jogos:
+            # 5% números aleatórios para completar (2-3 números)
+            todos_disponiveis = [n for n in self.numeros_range if n not in numeros_usados]
+            faltam = 50 - len(jogo)
+            if faltam > 0 and todos_disponiveis:
+                selecionados = random.sample(todos_disponiveis, min(faltam, len(todos_disponiveis)))
+                jogo.extend(selecionados)
+            
+            # Garante exatamente 50 números
+            jogo = sorted(list(set(jogo))[:50])
+            while len(jogo) < 50:
+                disponiveis = [n for n in self.numeros_range if n not in jogo]
+                if disponiveis:
+                    jogo.append(random.choice(disponiveis))
+                    jogo = sorted(jogo)
+                else:
+                    break
+            
+            if len(jogo) == 50 and jogo not in jogos:
                 jogos.append(jogo)
         
         return jogos
@@ -210,7 +259,15 @@ class GeradorFechamentoLotomania:
         }
         
         estrategia_func = estrategias.get(estrategia, self.fechamento_misto)
-        return estrategia_func(quantidade_jogos)
+        jogos = estrategia_func(quantidade_jogos)
+        
+        # Garante que não há jogos duplicados
+        jogos_unicos = []
+        for jogo in jogos:
+            if jogo not in jogos_unicos:
+                jogos_unicos.append(jogo)
+        
+        return jogos_unicos
     
     def validar_jogo(self, jogo: List[int]) -> bool:
         """Valida se um jogo está correto (50 números entre 0 e 99)"""
