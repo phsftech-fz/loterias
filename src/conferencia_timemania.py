@@ -78,6 +78,7 @@ class ConferidorJogosTimemania:
                     estatisticas_concursos.append({
                         'concurso': concurso['concurso'],
                         'data': concurso.get('data', ''),
+                        'time_coracao': concurso.get('time_coracao', ''),
                         'acertos': quantidade,
                         'numeros_acertados': sorted(list(acertos))
                     })
@@ -104,7 +105,16 @@ class ConferidorJogosTimemania:
                 'max_acertos': max_acertos,
                 'min_acertos': min_acertos,
                 'frequencia_numeros': frequencia_numeros,
-                'estatisticas_concursos': sorted(estatisticas_concursos, key=lambda x: x['acertos'], reverse=True)[:10]
+                'estatisticas_concursos': sorted(estatisticas_concursos, key=lambda x: x['acertos'], reverse=True)[:10],
+                'historico_completo': [
+                    {
+                        'concurso': c['concurso'],
+                        'data': c.get('data', ''),
+                        'time_coracao': c.get('time_coracao', ''),
+                        'numeros': c['numeros']
+                    }
+                    for c in self.historico
+                ]
             })
         
         return resultados

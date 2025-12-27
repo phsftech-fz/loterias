@@ -259,28 +259,38 @@ class GeradorFechamentoTimemania:
         estrategia: str = 'misto',
         quantidade_jogos: int = 10,
         numeros_fixos: List[int] = None
-    ) -> List[List[int]]:
-        """Gera fechamento completo baseado na estratégia escolhida"""
+    ) -> Dict:
+        """
+        Gera fechamento completo baseado na estratégia escolhida
+        Retorna dicionário com jogos e sugestão de time do coração
+        """
         if numeros_fixos:
-            return self.fechamento_matriz(numeros_fixos, quantidade_jogos)
+            jogos = self.fechamento_matriz(numeros_fixos, quantidade_jogos)
+        else:
+            estrategias = {
+                'frequencia': self.fechamento_por_frequencia,
+                'balanceado': self.fechamento_balanceado,
+                'atraso': self.fechamento_por_atraso,
+                'misto': self.fechamento_misto
+            }
+            
+            estrategia_func = estrategias.get(estrategia, self.fechamento_misto)
+            jogos = estrategia_func(quantidade_jogos)
+            
+            # Garante que não há jogos duplicados
+            jogos_unicos = []
+            for jogo in jogos:
+                if jogo not in jogos_unicos:
+                    jogos_unicos.append(jogo)
+            jogos = jogos_unicos
         
-        estrategias = {
-            'frequencia': self.fechamento_por_frequencia,
-            'balanceado': self.fechamento_balanceado,
-            'atraso': self.fechamento_por_atraso,
-            'misto': self.fechamento_misto
+        # Gera sugestão de time do coração baseada no histórico
+        sugestao_time = self.analisador.sugerir_time_coracao()
+        
+        return {
+            'jogos': jogos,
+            'time_sugerido': sugestao_time
         }
-        
-        estrategia_func = estrategias.get(estrategia, self.fechamento_misto)
-        jogos = estrategia_func(quantidade_jogos)
-        
-        # Garante que não há jogos duplicados
-        jogos_unicos = []
-        for jogo in jogos:
-            if jogo not in jogos_unicos:
-                jogos_unicos.append(jogo)
-        
-        return jogos_unicos
     
     def validar_jogo(self, jogo: List[int]) -> bool:
         """Valida se um jogo está correto (10 números entre 1 e 80)"""

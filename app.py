@@ -16,8 +16,138 @@ from src.fechamento_lotomania import GeradorFechamentoLotomania
 from src.conferencia_lotomania import ConferidorJogosLotomania
 import json
 import re
+import os
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
+
+# ==================== VALIDAÇÕES DE SEGURANÇA ====================
+
+# Limites de segurança
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
+MAX_LINES = 10000  # Máximo de linhas no arquivo
+MAX_JOGOS_IMPORT = 1000  # Máximo de jogos por importação
+MAX_QUANTIDADE_JOGOS = 100  # Máximo de jogos gerados por vez
+ALLOWED_EXTENSIONS = {'txt'}
+
+def allowed_file(filename: str) -> bool:
+    """Valida se o arquivo tem extensão permitida"""
+    if not filename:
+        return False
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def validate_filename(filename: str) -> tuple[bool, str, str]:
+    """Valida e sanitiza nome de arquivo - proteção contra path traversal"""
+    if not filename:
+        return False, "Nome de arquivo vazio", ""
+    
+    # Sanitiza nome do arquivo
+    safe_filename = secure_filename(filename)
+    
+    # Verifica path traversal (../, ..\, etc)
+    if '..' in filename or '/' in filename or '\\' in filename:
+        return False, "Nome de arquivo inválido - contém caracteres não permitidos", ""
+    
+    # Verifica extensão
+    if not allowed_file(safe_filename):
+        return False, "Apenas arquivos .txt são permitidos", ""
+    
+    # Limita tamanho do nome
+    if len(safe_filename) > 255:
+        return False, "Nome de arquivo muito longo", ""
+    
+    return True, "", safe_filename
+
+def validate_file_size(file) -> tuple[bool, str]:
+    """Valida tamanho do arquivo"""
+    try:
+        # Verifica tamanho do arquivo
+        file.seek(0, os.SEEK_END)
+        file_size = file.tell()
+        file.seek(0)  # Volta ao início
+        
+        if file_size > MAX_FILE_SIZE:
+            return False, f"Arquivo muito grande. Tamanho máximo: {MAX_FILE_SIZE / (1024*1024):.1f}MB"
+        
+        if file_size == 0:
+            return False, "Arquivo vazio"
+        
+        return True, ""
+    except Exception as e:
+        return False, f"Erro ao validar tamanho do arquivo: {str(e)}"
+
+def validate_file_content(content: str) -> tuple[bool, str]:
+    """Valida conteúdo do arquivo"""
+    if not content:
+        return False, "Conteúdo do arquivo vazio"
+    
+    # Limita tamanho do conteúdo (em caracteres)
+    if len(content) > MAX_FILE_SIZE:
+        return False, f"Conteúdo do arquivo muito grande. Máximo: {MAX_FILE_SIZE / (1024*1024):.1f}MB"
+    
+    # Limita número de linhas
+    lines = content.split('\n')
+    if len(lines) > MAX_LINES:
+        return False, f"Arquivo contém muitas linhas. Máximo: {MAX_LINES} linhas"
+    
+    # Verifica caracteres não permitidos (proteção contra scripts)
+    # Permite apenas caracteres alfanuméricos, espaços, pontuação básica e quebras de linha
+    dangerous_patterns = ['<script', 'javascript:', 'onerror=', 'onload=', 'eval(', 'exec(']
+    content_lower = content.lower()
+    for pattern in dangerous_patterns:
+        if pattern in content_lower:
+            return False, f"Conteúdo do arquivo contém código potencialmente perigoso"
+    
+    return True, ""
+
+def validate_numeros_list(numeros: list, min_num: int, max_num: int, max_quantidade: int = None) -> tuple[bool, str, list]:
+    """Valida lista de números"""
+    if not isinstance(numeros, list):
+        return False, "Números devem ser uma lista", []
+    
+    if max_quantidade and len(numeros) > max_quantidade:
+        return False, f"Máximo de {max_quantidade} números permitidos", []
+    
+    try:
+        numeros_validos = []
+        for num in numeros:
+            # Converte para int
+            if not isinstance(num, (int, str)):
+                continue
+            
+            num_int = int(num)
+            
+            # Valida range
+            if num_int < min_num or num_int > max_num:
+                continue
+            
+            # Adiciona apenas se não for duplicata
+            if num_int not in numeros_validos:
+                numeros_validos.append(num_int)
+        
+        return True, "", numeros_validos
+    except (ValueError, TypeError):
+        return False, "Números inválidos", []
+
+def validate_quantidade(quantidade: any, min_val: int, max_val: int) -> tuple[bool, str, int]:
+    """Valida quantidade numérica"""
+    try:
+        qtd = int(quantidade)
+        if qtd < min_val or qtd > max_val:
+            return False, f"Quantidade deve estar entre {min_val} e {max_val}", 0
+        return True, "", qtd
+    except (ValueError, TypeError):
+        return False, "Quantidade inválida", 0
+
+def validate_estrategia(estrategia: str, estrategias_validas: list) -> tuple[bool, str]:
+    """Valida estratégia escolhida"""
+    if not isinstance(estrategia, str):
+        return False, "Estratégia inválida"
+    
+    if estrategia not in estrategias_validas:
+        return False, f"Estratégia deve ser uma das seguintes: {', '.join(estrategias_validas)}"
+    
+    return True, ""
 
 # Inicializa componentes Lotofácil
 historico_manager = HistoricoLotofacil(usar_banco=True)
@@ -89,31 +219,69 @@ def gerar_jogos():
     """Gera jogos baseado nos parâmetros"""
     try:
         data = request.get_json()
-        estrategia = data.get('estrategia', 'misto')
-        quantidade = int(data.get('quantidade', 10))
-        quantidade_numeros = int(data.get('quantidade_numeros', 15))
-        numeros_fixos = data.get('numeros_fixos', [])
         
-        # Valida quantidade de números
-        if quantidade_numeros < 15 or quantidade_numeros > 20:
+        if not data:
             return jsonify({
                 'success': False,
-                'error': 'Quantidade de números deve ser entre 15 e 20'
+                'error': 'Dados inválidos'
             }), 400
         
+        # Valida estratégia
+        estrategia = data.get('estrategia', 'misto')
+        estrategias_validas = ['misto', 'frequencia', 'balanceado', 'atraso']
+        is_valid_estrategia, error_msg = validate_estrategia(estrategia, estrategias_validas)
+        if not is_valid_estrategia:
+            return jsonify({
+                'success': False,
+                'error': error_msg
+            }), 400
+        
+        # Valida quantidade de jogos
+        quantidade = data.get('quantidade', 10)
+        is_valid_qtd, error_msg, quantidade = validate_quantidade(quantidade, 1, MAX_QUANTIDADE_JOGOS)
+        if not is_valid_qtd:
+            return jsonify({
+                'success': False,
+                'error': error_msg
+            }), 400
+        
+        # Valida quantidade de números por jogo
+        quantidade_numeros = data.get('quantidade_numeros', 15)
+        is_valid_qtd_nums, error_msg, quantidade_numeros = validate_quantidade(quantidade_numeros, 15, 20)
+        if not is_valid_qtd_nums:
+            return jsonify({
+                'success': False,
+                'error': error_msg
+            }), 400
+        
+        # Valida números fixos
+        numeros_fixos = data.get('numeros_fixos', [])
         if numeros_fixos:
-            numeros_fixos = [int(n) for n in numeros_fixos]
+            is_valid_nums, error_msg, numeros_fixos = validate_numeros_list(
+                numeros_fixos, 
+                min_num=1, 
+                max_num=25, 
+                max_quantidade=quantidade_numeros
+            )
+            if not is_valid_nums:
+                return jsonify({
+                    'success': False,
+                    'error': error_msg
+                }), 400
+            
             # Valida que números fixos não excedem quantidade_numeros
             if len(numeros_fixos) > quantidade_numeros:
                 return jsonify({
                     'success': False,
                     'error': f'Números fixos ({len(numeros_fixos)}) não podem exceder quantidade de números por jogo ({quantidade_numeros})'
                 }), 400
+        else:
+            numeros_fixos = None
         
         jogos = gerador.gerar_fechamento_completo(
             estrategia=estrategia,
             quantidade_jogos=quantidade,
-            numeros_fixos=numeros_fixos if numeros_fixos else None,
+            numeros_fixos=numeros_fixos,
             quantidade_numeros=quantidade_numeros
         )
         
@@ -126,7 +294,7 @@ def gerar_jogos():
     except Exception as e:
         return jsonify({
             'success': False,
-            'error': str(e)
+            'error': f'Erro ao gerar jogos: {str(e)}'
         }), 500
 
 
@@ -280,6 +448,7 @@ def parsear_arquivo_txt(conteudo: str) -> list:
 def importar_jogos():
     """Importa jogos de arquivo TXT e confere"""
     try:
+        # Validação: verifica se arquivo foi enviado
         if 'file' not in request.files:
             return jsonify({
                 'success': False,
@@ -287,22 +456,67 @@ def importar_jogos():
             }), 400
         
         arquivo = request.files['file']
+        
+        # Validação: verifica se arquivo foi selecionado
         if arquivo.filename == '':
             return jsonify({
                 'success': False,
                 'error': 'Nenhum arquivo selecionado'
             }), 400
         
-        # Lê conteúdo do arquivo
-        conteudo = arquivo.read().decode('utf-8')
+        # Validação: nome do arquivo
+        is_valid_filename, error_msg, safe_filename = validate_filename(arquivo.filename)
+        if not is_valid_filename:
+            return jsonify({
+                'success': False,
+                'error': error_msg or 'Nome de arquivo inválido'
+            }), 400
+        
+        # Validação: tamanho do arquivo
+        is_valid_size, error_msg = validate_file_size(arquivo)
+        if not is_valid_size:
+            return jsonify({
+                'success': False,
+                'error': error_msg
+            }), 400
+        
+        # Lê conteúdo do arquivo com tratamento de encoding
+        try:
+            conteudo = arquivo.read().decode('utf-8')
+        except UnicodeDecodeError:
+            # Tenta outros encodings comuns
+            arquivo.seek(0)
+            try:
+                conteudo = arquivo.read().decode('latin-1')
+            except:
+                return jsonify({
+                    'success': False,
+                    'error': 'Erro ao decodificar arquivo. Use UTF-8 ou Latin-1'
+                }), 400
+        
+        # Validação: conteúdo do arquivo
+        is_valid_content, error_msg = validate_file_content(conteudo)
+        if not is_valid_content:
+            return jsonify({
+                'success': False,
+                'error': error_msg
+            }), 400
         
         # Parseia jogos
         jogos = parsear_arquivo_txt(conteudo)
         
+        # Validação: verifica se encontrou jogos
         if not jogos:
             return jsonify({
                 'success': False,
                 'error': 'Nenhum jogo válido encontrado no arquivo'
+            }), 400
+        
+        # Validação: limite de jogos por importação
+        if len(jogos) > MAX_JOGOS_IMPORT:
+            return jsonify({
+                'success': False,
+                'error': f'Máximo de {MAX_JOGOS_IMPORT} jogos por importação. Arquivo contém {len(jogos)} jogos'
             }), 400
         
         # Atualiza conferidor com histórico atual
@@ -320,7 +534,7 @@ def importar_jogos():
     except Exception as e:
         return jsonify({
             'success': False,
-            'error': str(e)
+            'error': f'Erro ao processar arquivo: {str(e)}'
         }), 500
 
 
@@ -329,7 +543,20 @@ def conferir_jogos():
     """Confere lista de jogos enviada via JSON"""
     try:
         data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'Dados inválidos'
+            }), 400
+        
         jogos = data.get('jogos', [])
+        
+        if not isinstance(jogos, list):
+            return jsonify({
+                'success': False,
+                'error': 'Jogos devem ser uma lista'
+            }), 400
         
         if not jogos:
             return jsonify({
@@ -337,23 +564,37 @@ def conferir_jogos():
                 'error': 'Nenhum jogo fornecido'
             }), 400
         
+        # Validação: limite de jogos por conferência
+        if len(jogos) > MAX_JOGOS_IMPORT:
+            return jsonify({
+                'success': False,
+                'error': f'Máximo de {MAX_JOGOS_IMPORT} jogos por conferência'
+            }), 400
+        
         # Valida jogos (aceita 15-20 números)
         jogos_validos = []
-        for jogo in jogos:
-            if isinstance(jogo, list) and 15 <= len(jogo) <= 20:
-                try:
-                    jogo_int = [int(n) for n in jogo if 1 <= int(n) <= 25]
-                    # Remove duplicatas
-                    jogo_int = list(dict.fromkeys(jogo_int))
-                    if 15 <= len(jogo_int) <= 20:
-                        jogos_validos.append(sorted(jogo_int))
-                except (ValueError, TypeError):
-                    continue
+        for idx, jogo in enumerate(jogos):
+            if not isinstance(jogo, list):
+                continue
+            
+            if not (15 <= len(jogo) <= 20):
+                continue
+            
+            # Valida números do jogo
+            is_valid, error_msg, jogo_validado = validate_numeros_list(
+                jogo,
+                min_num=1,
+                max_num=25,
+                max_quantidade=20
+            )
+            
+            if is_valid and 15 <= len(jogo_validado) <= 20:
+                jogos_validos.append(sorted(jogo_validado))
         
         if not jogos_validos:
             return jsonify({
                 'success': False,
-                'error': 'Nenhum jogo válido encontrado'
+                'error': 'Nenhum jogo válido encontrado. Jogos devem ter entre 15 e 20 números de 1 a 25'
             }), 400
         
         # Atualiza conferidor
@@ -371,7 +612,7 @@ def conferir_jogos():
     except Exception as e:
         return jsonify({
             'success': False,
-            'error': str(e)
+            'error': f'Erro ao conferir jogos: {str(e)}'
         }), 500
 
 
@@ -401,29 +642,96 @@ def gerar_jogos_timemania():
     """Gera jogos da Timemania baseado nos parâmetros"""
     try:
         data = request.get_json()
-        estrategia = data.get('estrategia', 'misto')
-        quantidade = int(data.get('quantidade', 10))
-        numeros_fixos = data.get('numeros_fixos', [])
         
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'Dados inválidos'
+            }), 400
+        
+        # Valida estratégia
+        estrategia = data.get('estrategia', 'misto')
+        estrategias_validas = ['misto', 'frequencia', 'balanceado', 'atraso']
+        is_valid_estrategia, error_msg = validate_estrategia(estrategia, estrategias_validas)
+        if not is_valid_estrategia:
+            return jsonify({
+                'success': False,
+                'error': error_msg
+            }), 400
+        
+        # Valida quantidade de jogos
+        quantidade = data.get('quantidade', 10)
+        is_valid_qtd, error_msg, quantidade = validate_quantidade(quantidade, 1, MAX_QUANTIDADE_JOGOS)
+        if not is_valid_qtd:
+            return jsonify({
+                'success': False,
+                'error': error_msg
+            }), 400
+        
+        # Valida números fixos (Timemania: 1-80, máximo 10)
+        numeros_fixos = data.get('numeros_fixos', [])
         if numeros_fixos:
-            numeros_fixos = [int(n) for n in numeros_fixos]
+            is_valid_nums, error_msg, numeros_fixos = validate_numeros_list(
+                numeros_fixos,
+                min_num=1,
+                max_num=80,
+                max_quantidade=10
+            )
+            if not is_valid_nums:
+                return jsonify({
+                    'success': False,
+                    'error': error_msg
+                }), 400
+            
             if len(numeros_fixos) > 10:
                 return jsonify({
                     'success': False,
                     'error': f'Números fixos ({len(numeros_fixos)}) não podem exceder 10 números por jogo'
                 }), 400
+        else:
+            numeros_fixos = None
         
-        jogos = gerador_timemania.gerar_fechamento_completo(
+        resultado = gerador_timemania.gerar_fechamento_completo(
             estrategia=estrategia,
             quantidade_jogos=quantidade,
-            numeros_fixos=numeros_fixos if numeros_fixos else None
+            numeros_fixos=numeros_fixos
         )
+        
+        jogos = resultado.get('jogos', [])
+        time_sugerido = resultado.get('time_sugerido', {})
         
         return jsonify({
             'success': True,
             'jogos': jogos,
             'quantidade': len(jogos),
-            'quantidade_numeros': 10
+            'quantidade_numeros': 10,
+            'time_sugerido': time_sugerido
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'Erro ao gerar jogos: {str(e)}'
+        }), 500
+
+
+@app.route('/api/timemania/historico')
+def get_historico_timemania():
+    """Retorna histórico de concursos da Timemania com times sorteados"""
+    try:
+        limite = int(request.args.get('limite', 50))
+        limite = min(limite, 500)  # Limite máximo de segurança
+        
+        ultimos = historico_timemania[-limite:] if len(historico_timemania) > limite else historico_timemania
+        
+        # Garante que cada concurso tem time_coracao (mesmo que vazio)
+        for concurso in ultimos:
+            if 'time_coracao' not in concurso:
+                concurso['time_coracao'] = ''
+        
+        return jsonify({
+            'success': True,
+            'concursos': ultimos,
+            'total': len(historico_timemania)
         })
     except Exception as e:
         return jsonify({
@@ -504,6 +812,7 @@ def parsear_arquivo_txt_timemania(conteudo: str) -> list:
 def importar_jogos_timemania():
     """Importa jogos de arquivo TXT e confere - Timemania"""
     try:
+        # Validação: verifica se arquivo foi enviado
         if 'file' not in request.files:
             return jsonify({
                 'success': False,
@@ -511,19 +820,65 @@ def importar_jogos_timemania():
             }), 400
         
         arquivo = request.files['file']
+        
+        # Validação: verifica se arquivo foi selecionado
         if arquivo.filename == '':
             return jsonify({
                 'success': False,
                 'error': 'Nenhum arquivo selecionado'
             }), 400
         
-        conteudo = arquivo.read().decode('utf-8')
+        # Validação: nome do arquivo
+        is_valid_filename, error_msg, safe_filename = validate_filename(arquivo.filename)
+        if not is_valid_filename:
+            return jsonify({
+                'success': False,
+                'error': error_msg or 'Nome de arquivo inválido'
+            }), 400
+        
+        # Validação: tamanho do arquivo
+        is_valid_size, error_msg = validate_file_size(arquivo)
+        if not is_valid_size:
+            return jsonify({
+                'success': False,
+                'error': error_msg
+            }), 400
+        
+        # Lê conteúdo do arquivo com tratamento de encoding
+        try:
+            conteudo = arquivo.read().decode('utf-8')
+        except UnicodeDecodeError:
+            arquivo.seek(0)
+            try:
+                conteudo = arquivo.read().decode('latin-1')
+            except:
+                return jsonify({
+                    'success': False,
+                    'error': 'Erro ao decodificar arquivo. Use UTF-8 ou Latin-1'
+                }), 400
+        
+        # Validação: conteúdo do arquivo
+        is_valid_content, error_msg = validate_file_content(conteudo)
+        if not is_valid_content:
+            return jsonify({
+                'success': False,
+                'error': error_msg
+            }), 400
+        
         jogos = parsear_arquivo_txt_timemania(conteudo)
         
+        # Validação: verifica se encontrou jogos
         if not jogos:
             return jsonify({
                 'success': False,
                 'error': 'Nenhum jogo válido encontrado no arquivo'
+            }), 400
+        
+        # Validação: limite de jogos por importação
+        if len(jogos) > MAX_JOGOS_IMPORT:
+            return jsonify({
+                'success': False,
+                'error': f'Máximo de {MAX_JOGOS_IMPORT} jogos por importação. Arquivo contém {len(jogos)} jogos'
             }), 400
         
         global conferidor_timemania
@@ -539,7 +894,7 @@ def importar_jogos_timemania():
     except Exception as e:
         return jsonify({
             'success': False,
-            'error': str(e)
+            'error': f'Erro ao processar arquivo: {str(e)}'
         }), 500
 
 
@@ -548,23 +903,57 @@ def conferir_jogos_timemania():
     """Confere jogos enviados via JSON - Timemania"""
     try:
         data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'Dados inválidos'
+            }), 400
+        
         jogos = data.get('jogos', [])
+        
+        if not isinstance(jogos, list):
+            return jsonify({
+                'success': False,
+                'error': 'Jogos devem ser uma lista'
+            }), 400
+        
+        if not jogos:
+            return jsonify({
+                'success': False,
+                'error': 'Nenhum jogo fornecido'
+            }), 400
+        
+        # Validação: limite de jogos por conferência
+        if len(jogos) > MAX_JOGOS_IMPORT:
+            return jsonify({
+                'success': False,
+                'error': f'Máximo de {MAX_JOGOS_IMPORT} jogos por conferência'
+            }), 400
         
         jogos_validos = []
         for jogo in jogos:
-            if isinstance(jogo, list) and len(jogo) == 10:
-                try:
-                    jogo_int = [int(n) for n in jogo if 1 <= int(n) <= 80]
-                    jogo_int = list(dict.fromkeys(jogo_int))
-                    if len(jogo_int) == 10:
-                        jogos_validos.append(sorted(jogo_int))
-                except (ValueError, TypeError):
-                    continue
+            if not isinstance(jogo, list):
+                continue
+            
+            if len(jogo) != 10:
+                continue
+            
+            # Valida números do jogo (Timemania: 1-80)
+            is_valid, error_msg, jogo_validado = validate_numeros_list(
+                jogo,
+                min_num=1,
+                max_num=80,
+                max_quantidade=10
+            )
+            
+            if is_valid and len(jogo_validado) == 10:
+                jogos_validos.append(sorted(jogo_validado))
         
         if not jogos_validos:
             return jsonify({
                 'success': False,
-                'error': 'Nenhum jogo válido encontrado'
+                'error': 'Nenhum jogo válido encontrado. Jogos devem ter exatamente 10 números de 1 a 80'
             }), 400
         
         global conferidor_timemania
@@ -580,7 +969,7 @@ def conferir_jogos_timemania():
     except Exception as e:
         return jsonify({
             'success': False,
-            'error': str(e)
+            'error': f'Erro ao conferir jogos: {str(e)}'
         }), 500
 
 
@@ -610,22 +999,59 @@ def gerar_jogos_lotomania():
     """Gera jogos da Lotomania baseado nos parâmetros"""
     try:
         data = request.get_json()
-        estrategia = data.get('estrategia', 'misto')
-        quantidade = int(data.get('quantidade', 10))
-        numeros_fixos = data.get('numeros_fixos', [])
         
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'Dados inválidos'
+            }), 400
+        
+        # Valida estratégia
+        estrategia = data.get('estrategia', 'misto')
+        estrategias_validas = ['misto', 'frequencia', 'balanceado', 'atraso']
+        is_valid_estrategia, error_msg = validate_estrategia(estrategia, estrategias_validas)
+        if not is_valid_estrategia:
+            return jsonify({
+                'success': False,
+                'error': error_msg
+            }), 400
+        
+        # Valida quantidade de jogos
+        quantidade = data.get('quantidade', 10)
+        is_valid_qtd, error_msg, quantidade = validate_quantidade(quantidade, 1, MAX_QUANTIDADE_JOGOS)
+        if not is_valid_qtd:
+            return jsonify({
+                'success': False,
+                'error': error_msg
+            }), 400
+        
+        # Valida números fixos (Lotomania: 0-99, máximo 50)
+        numeros_fixos = data.get('numeros_fixos', [])
         if numeros_fixos:
-            numeros_fixos = [int(n) for n in numeros_fixos]
+            is_valid_nums, error_msg, numeros_fixos = validate_numeros_list(
+                numeros_fixos,
+                min_num=0,
+                max_num=99,
+                max_quantidade=50
+            )
+            if not is_valid_nums:
+                return jsonify({
+                    'success': False,
+                    'error': error_msg
+                }), 400
+            
             if len(numeros_fixos) > 50:
                 return jsonify({
                     'success': False,
                     'error': f'Números fixos ({len(numeros_fixos)}) não podem exceder 50 números por jogo'
                 }), 400
+        else:
+            numeros_fixos = None
         
         jogos = gerador_lotomania.gerar_fechamento_completo(
             estrategia=estrategia,
             quantidade_jogos=quantidade,
-            numeros_fixos=numeros_fixos if numeros_fixos else None
+            numeros_fixos=numeros_fixos
         )
         
         return jsonify({
@@ -637,7 +1063,7 @@ def gerar_jogos_lotomania():
     except Exception as e:
         return jsonify({
             'success': False,
-            'error': str(e)
+            'error': f'Erro ao gerar jogos: {str(e)}'
         }), 500
 
 
@@ -714,6 +1140,7 @@ def parsear_arquivo_txt_lotomania(conteudo: str) -> list:
 def importar_jogos_lotomania():
     """Importa jogos de arquivo TXT e confere - Lotomania"""
     try:
+        # Validação: verifica se arquivo foi enviado
         if 'file' not in request.files:
             return jsonify({
                 'success': False,
@@ -721,19 +1148,65 @@ def importar_jogos_lotomania():
             }), 400
         
         arquivo = request.files['file']
+        
+        # Validação: verifica se arquivo foi selecionado
         if arquivo.filename == '':
             return jsonify({
                 'success': False,
                 'error': 'Nenhum arquivo selecionado'
             }), 400
         
-        conteudo = arquivo.read().decode('utf-8')
+        # Validação: nome do arquivo
+        is_valid_filename, error_msg, safe_filename = validate_filename(arquivo.filename)
+        if not is_valid_filename:
+            return jsonify({
+                'success': False,
+                'error': error_msg or 'Nome de arquivo inválido'
+            }), 400
+        
+        # Validação: tamanho do arquivo
+        is_valid_size, error_msg = validate_file_size(arquivo)
+        if not is_valid_size:
+            return jsonify({
+                'success': False,
+                'error': error_msg
+            }), 400
+        
+        # Lê conteúdo do arquivo com tratamento de encoding
+        try:
+            conteudo = arquivo.read().decode('utf-8')
+        except UnicodeDecodeError:
+            arquivo.seek(0)
+            try:
+                conteudo = arquivo.read().decode('latin-1')
+            except:
+                return jsonify({
+                    'success': False,
+                    'error': 'Erro ao decodificar arquivo. Use UTF-8 ou Latin-1'
+                }), 400
+        
+        # Validação: conteúdo do arquivo
+        is_valid_content, error_msg = validate_file_content(conteudo)
+        if not is_valid_content:
+            return jsonify({
+                'success': False,
+                'error': error_msg
+            }), 400
+        
         jogos = parsear_arquivo_txt_lotomania(conteudo)
         
+        # Validação: verifica se encontrou jogos
         if not jogos:
             return jsonify({
                 'success': False,
                 'error': 'Nenhum jogo válido encontrado no arquivo'
+            }), 400
+        
+        # Validação: limite de jogos por importação
+        if len(jogos) > MAX_JOGOS_IMPORT:
+            return jsonify({
+                'success': False,
+                'error': f'Máximo de {MAX_JOGOS_IMPORT} jogos por importação. Arquivo contém {len(jogos)} jogos'
             }), 400
         
         global conferidor_lotomania
@@ -749,7 +1222,7 @@ def importar_jogos_lotomania():
     except Exception as e:
         return jsonify({
             'success': False,
-            'error': str(e)
+            'error': f'Erro ao processar arquivo: {str(e)}'
         }), 500
 
 
@@ -758,23 +1231,57 @@ def conferir_jogos_lotomania():
     """Confere jogos enviados via JSON - Lotomania"""
     try:
         data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'Dados inválidos'
+            }), 400
+        
         jogos = data.get('jogos', [])
+        
+        if not isinstance(jogos, list):
+            return jsonify({
+                'success': False,
+                'error': 'Jogos devem ser uma lista'
+            }), 400
+        
+        if not jogos:
+            return jsonify({
+                'success': False,
+                'error': 'Nenhum jogo fornecido'
+            }), 400
+        
+        # Validação: limite de jogos por conferência
+        if len(jogos) > MAX_JOGOS_IMPORT:
+            return jsonify({
+                'success': False,
+                'error': f'Máximo de {MAX_JOGOS_IMPORT} jogos por conferência'
+            }), 400
         
         jogos_validos = []
         for jogo in jogos:
-            if isinstance(jogo, list) and len(jogo) == 50:  # Lotomania: 50 números
-                try:
-                    jogo_int = [int(n) for n in jogo if 0 <= int(n) <= 99]
-                    jogo_int = list(dict.fromkeys(jogo_int))
-                    if len(jogo_int) == 50:
-                        jogos_validos.append(sorted(jogo_int))
-                except (ValueError, TypeError):
-                    continue
+            if not isinstance(jogo, list):
+                continue
+            
+            if len(jogo) != 50:  # Lotomania: 50 números
+                continue
+            
+            # Valida números do jogo (Lotomania: 0-99)
+            is_valid, error_msg, jogo_validado = validate_numeros_list(
+                jogo,
+                min_num=0,
+                max_num=99,
+                max_quantidade=50
+            )
+            
+            if is_valid and len(jogo_validado) == 50:
+                jogos_validos.append(sorted(jogo_validado))
         
         if not jogos_validos:
             return jsonify({
                 'success': False,
-                'error': 'Nenhum jogo válido encontrado'
+                'error': 'Nenhum jogo válido encontrado. Jogos devem ter exatamente 50 números de 0 a 99'
             }), 400
         
         global conferidor_lotomania
@@ -790,7 +1297,7 @@ def conferir_jogos_lotomania():
     except Exception as e:
         return jsonify({
             'success': False,
-            'error': str(e)
+            'error': f'Erro ao conferir jogos: {str(e)}'
         }), 500
 
 
