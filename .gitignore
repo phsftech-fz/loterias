@@ -7,10 +7,7 @@ env/
 venv/
 ENV/
 .venv
-*.db
-*.sqlite
 *.db-journal
-data/
 .DS_Store
 .env
 
