@@ -1,0 +1,44 @@
+# Arquivos Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Ambientes virtuais
+venv/
+env/
+ENV/
+
+# Banco de dados local
+*.db
+data/
+
+# Arquivos de IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Arquivos do sistema
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Arquivos temporários
+*.tmp
+*.bak
+
+# Git
+.git/
+.gitignore
+
+# Documentação (opcional - pode remover se quiser incluir)
+*.md
+!README.md
+
+# Arquivos de instalação Windows
+*.bat
+
