@@ -10,9 +10,9 @@ venv/
 env/
 ENV/
 
-# Banco de dados local
-*.db
-data/
+# Banco de dados local (removido para incluir dados processados)
+# *.db
+# data/
 
 # Arquivos de IDE
 .vscode/
